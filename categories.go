@@ -30,7 +30,7 @@ import (
 type Categories []Category
 
 type Category struct {
-	Id        string `json:"id"`
+	ID        string `json:"id"`
 	Name      string `json:"name"`
 	ColorHex  string `json:"colorHex"`
 	SortIndex int    `json:"sortIndex"`

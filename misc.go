@@ -109,7 +109,10 @@ func doPost(ctx context.Context, client httpClient, req *http.Request, parser re
 		return err
 	}
 	logResponse(resp, d)
-	return parser(resp)
+	if resp.ContentLength != 0 {
+		return parser(resp)
+	}
+	return nil
 }
 
 func doDelete(ctx context.Context, client httpClient, req *http.Request, d Debug) error {

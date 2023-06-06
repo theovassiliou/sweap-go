@@ -29,14 +29,62 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/joho/godotenv"
 	"golang.org/x/oauth2/clientcredentials"
 )
 
 const (
-	// APIURL of the slack api.
+	// Official endpoints for normal users
+	// APIURL   = "https://api.sweap.io/core/v1/"
 	APIURL   = "https://api.sweap.io/core/v1/"
 	TOKENURL = "https://auth.sweap.io/realms/users/protocol/openid-connect/token"
+
+	// Inofficial endpoints to the staging or dev area.
+	// Normal API users won't need this.
+	// For special development purposes, only
+	APIURL_ST   = "https://api.sweap.st/core/v1/"
+	TOKENURL_ST = "https://auth.sweap.st/realms/users/protocol/openid-connect/token"
+
+	APIURL_DEV   = "https://api.sweap.dev/core/v1/"
+	TOKENURL_DEV = "https://auth.sweap.dev/realms/users/protocol/openid-connect/token"
 )
+
+type Status string
+
+const (
+	OK                   Status = "OK"
+	BAD_REQUEST          Status = "BAD_REQUEST"
+	UNAUTHORIZED         Status = "UNAUTHORIZED"
+	VALIDATION_EXCEPTION Status = "VALIDATION_EXCEPTION"
+	EXCEPTION            Status = "EXCEPTION"
+	WRONG_CREDENTIALS    Status = "WRONG_CREDENTIALS"
+	ACCESS_DENIED        Status = "ACCESS_DENIED"
+	NOT_FOUND            Status = "NOT_FOUND"
+	DUPLICATE_ENTITY     Status = "DUPLICATE_ENTITY"
+)
+
+type SortBy string
+
+const (
+	CREATED_AT SortBy = "createdAt"
+	UPDATED_AT SortBy = "updatedAt"
+	START_DATE SortBy = "startDate"
+	END_DATE   SortBy = "endDate"
+	NAME       SortBy = "name"
+)
+
+type SortOrder string
+
+const (
+	ASC  SortOrder = "ASC"
+	DESC SortOrder = "DESC"
+)
+
+type Error struct {
+	Error   string
+	Code    int
+	Message string
+}
 
 // httpClient defines the minimal interface needed for an http.Client to be implemented.
 type httpClient interface {
@@ -65,6 +113,7 @@ type Client struct {
 	tokenurl     string
 	log          ilogger
 	httpclient   httpClient
+	envFile      string
 }
 
 // NewSweap creates a new Sweap object with given credentials
@@ -85,8 +134,8 @@ func New(clientId, clientSecret string, options ...SweapOptions) (*Client, error
 	}
 
 	c := clientcredentials.Config{
-		ClientID:     clientId,
-		ClientSecret: clientSecret,
+		ClientID:     s.clientID,
+		ClientSecret: s.clientSecret,
 		TokenURL:     s.tokenurl,
 		AuthStyle:    0,
 	}
@@ -96,17 +145,20 @@ func New(clientId, clientSecret string, options ...SweapOptions) (*Client, error
 
 	s.httpclient = client
 
-	// TODO: Remove this from here, if a real api call for testing authentification has been included.
-	/* _, err := s.GetEvents()
+	if c.TokenURL == TOKENURL_DEV && !s.checkCredentials() {
+		return nil, fmt.Errorf("authorization at endopoint %v failed. Check credentials", s.tokenurl)
+	}
 
-	if err != nil {
-		fmt.Printf("%s\n", err)
-		return nil, err
-	} */
 	return s, nil
 }
 
+func (s *Client) checkCredentials() bool {
+	_, err := s.CheckCredentials()
+	return err == nil
+}
+
 // ----- Options -------
+type SweapOptions func(*Client)
 
 // OptionClientCredentials sets an app-level token for the client.
 func OptionClientCredentials(id, secret string) func(*Client) {
@@ -116,12 +168,46 @@ func OptionClientCredentials(id, secret string) func(*Client) {
 	}
 }
 
-type SweapOptions func(*Client)
+// OptionUseStagingEnv selects the staging environment for the client.
+func OptionUseStagingEnv() func(*Client) {
+	return func(c *Client) {
+		c.tokenurl = TOKENURL_ST
+		c.endpoint = APIURL_ST
+	}
+}
+
+// OptionUseDevEnv selects the dev environment for the client.
+func OptionUseDevEnv() func(*Client) {
+	return func(c *Client) {
+		c.tokenurl = TOKENURL_DEV
+		c.endpoint = APIURL_DEV
+	}
+}
 
 // OptionLog set logging for client.
 func OptionLog(l logger) func(*Client) {
 	return func(c *Client) {
 		c.log = internalLog{logger: l}
+	}
+}
+
+// OptionEnvFile uses an env file for reading the credentials
+func OptionEnvFile(fileName string) func(*Client) {
+	return func(c *Client) {
+		c.envFile = fileName
+		err := godotenv.Load(fileName)
+
+		if err != nil {
+			log.Fatalf("Error loading .env file: %v\n", fileName)
+		}
+
+		if env, present := os.LookupEnv("CLIENTID"); present {
+			c.clientID = env
+		}
+
+		if env, present := os.LookupEnv("CLIENT_SECRET"); present {
+			c.clientSecret = env
+		}
 	}
 }
 

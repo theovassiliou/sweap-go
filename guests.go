@@ -24,6 +24,7 @@ package sweap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -32,11 +33,13 @@ import (
 type Guests []Guest
 
 type Guest struct {
-	ID              string          `json:"id"`
-	ExternalID      interface{}     `json:"externalId"`
-	Version         int             `json:"version"`
-	CreatedAt       *time.Time      `json:"createdAt,omitempty"`
-	UpdatedAt       *time.Time      `json:"updatedAt,omitempty"`
+	// Common fields
+	ID         string      `json:"id"`
+	Version    int         `json:"version"`
+	UpdatedAt  *time.Time  `json:"updatedAt,omitempty"`
+	CreatedAt  *time.Time  `json:"createdAt,omitempty"`
+	ExternalID interface{} `json:"externalId"`
+	// Specific fields
 	EventID         string          `json:"eventId"`
 	FirstName       string          `json:"firstName"`
 	LastName        string          `json:"lastName"`
@@ -47,7 +50,29 @@ type Guest struct {
 	InvitationID    string          `json:"invitationId,omitempty"`
 	InvitationState InvitationState `json:"invitationState"`
 	TicketID        string          `json:"ticketId,omitempty"`
+	ParentGuestID   string          `json:"parentGuestId"`
+	CategoryID      string          `json:"categoryId"`
+	AttendanceState AttendanceState `json:"attendanceState"`
 }
+
+type AttendanceState string
+
+const (
+	NONEATTENDANCE AttendanceState = "NONE"
+	PRESENT        AttendanceState = "PRESENT"
+	GONE           AttendanceState = "GONE"
+)
+
+// GuestUpdate carries all update events for guest, let it be new guests, or updated guests
+type GuestUpdate struct {
+	EventType string
+	Value     interface{}
+}
+
+const (
+	NEWGUEST    = "NEW_GUEST"
+	UPDATEGUEST = "UPDATE_GUEST"
+)
 
 type CustomFields struct {
 	DefaultMetaAttributeTitle string `json:"default_meta_attribute__title"`
@@ -59,6 +84,7 @@ func (api *Client) CreateGuest(g Guest) (*Guest, error) {
 }
 
 // CreateGuest creates a Guest in an event and returns a Guest containing it's unigue ID with custom context
+// FIXME: Fix spelling of CONTEXT
 func (api *Client) CreateGuestConext(ctx context.Context, g Guest) (*Guest, error) {
 
 	if g.EventID == "" {
@@ -86,12 +112,28 @@ func (api *Client) GetGuests(eventId string) (*Guests, error) {
 func (api *Client) GetGuestsContext(ctx context.Context, eventId string, params GuestSearchParameter) (*Guests, error) {
 	values := url.Values{}
 
+	if eventId != "" {
+		values.Add("eventId", eventId)
+	} else if params.Id != "" || params.InvitationId != "" {
+		values.Add("id", params.Id)
+		values.Add("invitationId", params.InvitationId)
+	} else {
+		return nil, errors.New("neither eventId nor Guest or InvitationId provided")
+	}
+
 	if params.FirstName != "" {
-		values.Add("first_name", params.FirstName)
+		values.Add("firstName", params.FirstName)
+	}
+	if params.FirstNameContains != "" {
+		values.Add("firstNameContains", params.FirstNameContains)
 	}
 
 	if params.LastName != "" {
-		values.Add("last_name", params.LastName)
+		values.Add("lastName", params.LastName)
+	}
+
+	if params.LastNameContains != "" {
+		values.Add("lastNameContains", params.LastNameContains)
 	}
 
 	if params.Email != "" {
@@ -99,25 +141,20 @@ func (api *Client) GetGuestsContext(ctx context.Context, eventId string, params 
 	}
 
 	if params.InvitationState != "" {
-		values.Add("invitation_state", string(params.InvitationState))
+		values.Add("invitationState", string(params.InvitationState))
 	}
 
 	if params.ExternalID != "" {
-		values.Add("external_id", params.ExternalID)
+		values.Add("externalId", params.ExternalID)
 	}
 	if params.CreatedAfter != nil {
-		values.Add("start_date_after", params.CreatedAfter.Format(time.RFC3339))
+		values.Add("createdAfter", params.CreatedAfter.Format(time.RFC3339))
 	}
 
 	if params.UpdatedAfter != nil {
-		values.Add("end_date_after", params.UpdatedAfter.Format(time.RFC3339))
+		values.Add("updatedAfter", params.UpdatedAfter.Format(time.RFC3339))
 	}
 
-	if eventId != "" {
-		values.Add("event_id", eventId)
-	} else {
-		panic("no event id given")
-	}
 	response, err := api.guestsRequest(ctx, "guests", values)
 	if err != nil {
 		return nil, err
@@ -205,4 +242,17 @@ func (api *Client) guestRequest(ctx context.Context, path string, values url.Val
 	}
 
 	return response, nil
+}
+
+func NewGuestIterator(guests []Guest) func() *Guest {
+	n := 0
+	// closure captures variable n
+	return func() *Guest {
+		if n < len(guests) {
+			g := &guests[n]
+			n++
+			return g
+		}
+		return nil
+	}
 }

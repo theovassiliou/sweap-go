@@ -22,6 +22,7 @@ package sweap
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"time"
 )
@@ -29,28 +30,71 @@ import (
 type Events []Event
 
 type Event struct {
-	ID                     string                   `json:"id"`
-	ExternalID             interface{}              `json:"externalId"`
-	Version                int                      `json:"version"`
-	CreatedAt              time.Time                `json:"createdAt"`
-	UpdatedAt              time.Time                `json:"updatedAt"`
+	// Common fields
+	ID         string      `json:"id"`
+	Version    int         `json:"version"`
+	UpdatedAt  *time.Time  `json:"updatedAt"`
+	CreatedAt  *time.Time  `json:"createdAt"`
+	ExternalID interface{} `json:"externalId"`
+	// Specific fields
 	Name                   string                   `json:"name"`
 	StartDate              time.Time                `json:"startDate"`
 	EndDate                time.Time                `json:"endDate"`
+	ZoneId                 string                   `json:"zoneId"`
+	AttendanceMode         AttendanceMode           `json:"attendanceMode"`
 	State                  string                   `json:"state"`
 	CustomFieldDefinitions []CustomFieldDefinitions `json:"customFieldDefinitions"`
 }
 
+type AttendanceMode string
+
+const (
+	OFFLINE AttendanceMode = "OFFLINE"
+	ONLINE  AttendanceMode = "ONLINE"
+	MIXED   AttendanceMode = "MIXED"
+)
+
 type CustomFieldDefinitions struct {
 	ID        string      `json:"id"`
 	Name      string      `json:"name"`
-	SortIndex int         `json:"sortIndex"`
 	Type      string      `json:"type"`
+	SortIndex int         `json:"sortIndex"`
 	GroupName interface{} `json:"groupName"`
 	Options   interface{} `json:"options"`
 }
 
+type EventPages struct {
+	Status   string `json:"status"`
+	Content  Events `json:"content"`
+	Error    Error  `json:"error"`
+	Pageable struct {
+		Size          int `json:"size"`
+		TotalElements int `json:"totalElements"`
+		TotalPages    int `json:"totalPages"`
+		Page          int `json:"page"`
+	} `json:"pageable"`
+
+	/*!SECTION
+		{
+	    "status": "OK",
+	    "content": [
+	        {
+	            "name": "IntegrationTestEvent2",
+	...
+	        }
+	    ],
+	    "pageable": {
+	        "size": 1,
+	        "totalElements": 3,
+	        "totalPages": 3,
+	        "page": 1
+	    }
+	}
+	*/
+}
+
 // GetEvents will retrieve the complete list of events
+// GET /events?[PARAMS]
 func (api *Client) GetEvents() (*Events, error) {
 	return api.GetEventsContext(context.Background(), NewEventSearchParameters())
 }
@@ -59,8 +103,16 @@ func (api *Client) GetEvents() (*Events, error) {
 func (api *Client) GetEventsContext(ctx context.Context, params EventSearchParameter) (*Events, error) {
 	values := url.Values{}
 
+	if params.Id != "" {
+		values.Add("id", params.Id)
+	}
+
 	if params.Name != "" {
 		values.Add("name", params.Name)
+	}
+
+	if params.NameContains != "" {
+		values.Add("nameContains", params.NameContains)
 	}
 
 	if params.State != "" {
@@ -68,23 +120,23 @@ func (api *Client) GetEventsContext(ctx context.Context, params EventSearchParam
 	}
 
 	if params.StartDateAfter != nil {
-		values.Add("start_date_after", params.StartDateAfter.Format(time.RFC3339))
+		values.Add("startDateAfter", params.StartDateAfter.Format(time.RFC3339))
 	}
 
 	if params.EndDateAfter != nil {
-		values.Add("end_date_after", params.EndDateAfter.Format(time.RFC3339))
+		values.Add("endDateAfter", params.EndDateAfter.Format(time.RFC3339))
 	}
 
 	if params.CreatedAfter != nil {
-		values.Add("created_after", params.CreatedAfter.Format(time.RFC3339))
+		values.Add("createdAfter", params.CreatedAfter.Format(time.RFC3339))
 	}
 
 	if params.UpdatedAfter != nil {
-		values.Add("updated_after", params.UpdatedAfter.Format(time.RFC3339))
+		values.Add("updatedAfter", params.UpdatedAfter.Format(time.RFC3339))
 	}
 
 	if params.ExternalID != "" {
-		values.Add("external_id", string(params.ExternalID))
+		values.Add("externalId", string(params.ExternalID))
 	}
 
 	response, err := api.eventsRequest(ctx, "events", values)
@@ -95,8 +147,37 @@ func (api *Client) GetEventsContext(ctx context.Context, params EventSearchParam
 }
 
 // GetEvents will retrieve the event with the given ID
+// GET /events/{ID}
 func (api *Client) GetEventById(id string) (*Event, error) {
 	return api.GetEventByIdContext(context.Background(), id)
+}
+
+// CheckCredentials will check wether valid credentials have been used
+// GET /events/{ID}
+func (api *Client) CheckCredentials() (bool, error) {
+	return api.CheckCredentialsContext(context.Background())
+}
+
+// GetEventsContext will retrieve the complete list of events with a custom context
+func (api *Client) CheckCredentialsContext(ctx context.Context) (bool, error) {
+	values := url.Values{}
+
+	_, err := api.checkCredentialsRequest(ctx, "management/check-credentials", values)
+	if err != nil {
+		fmt.Println(err)
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (api *Client) checkCredentialsRequest(ctx context.Context, path string, values url.Values) (bool, error) {
+	err := api.getMethod(ctx, path, values, nil)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // GetEventsContext will retrieve the complete list of events with a custom context
@@ -129,4 +210,8 @@ func (api *Client) eventRequest(ctx context.Context, path string, values url.Val
 	}
 
 	return response, nil
+}
+
+func (e Event) String() string {
+	return e.Name + ":" + e.ID
 }
