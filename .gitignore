@@ -2,11 +2,7 @@ FindingsSweapApi.md
 doc/internal/credentials.txt
 .DS_Store
 examples/events/events.go
-examples/generateguests/main.go
-examples/generateguests/census-90/all.last
-examples/generateguests/census-90/female.first
-examples/generateguests/census-90/male.first
-examples/guests/generateGuests.go
+examples/guests/
 examples/guests/guests.go
 examples/guests/census-90/all.last
 examples/guests/census-90/female.first
@@ -19,7 +15,12 @@ examples/guestsBulkImport/census-90/male.first
 examples/guestsD/guests.go
 examples/pollingNewGuests/guests.go
 examples/statistics/statistics.go
+examples/generateBulkGuests
+examples/generateguestsOneByOne
+examples/deleteBulkImports
 .nicholas-env
 .stageing-env
 .dev-env
 .env
+apps/clearance/main.go
+apps/main.go
