@@ -51,69 +51,46 @@ func (api *Client) GetEventStatistics() (*EventStatistics, error) {
 	return api.GetEventStatisticsContext(context.Background(), NewEventStatisticsSearchParameter())
 }
 
-// GetEventStatisticsContext returns all events statistics under your account.
+// GetEventStatisticsContext returns all event statistics under your account based on the provided search parameters.
+// It takes a context.Context object and an EventStatisticsSearchParameter object as input.
+// If successful, it returns a pointer to EventStatistics and nil error.
+// If an error occurs during the request, it returns nil and the specific error encountered.
+// The function can be called on a Client object.
 func (api *Client) GetEventStatisticsContext(ctx context.Context, params EventStatisticsSearchParameter) (*EventStatistics, error) {
+	// Initialize URL values to be used for query parameters.
 	values := url.Values{}
 
+	// Helper function to set non-negative integer parameters
+	setNonNegativeParam := func(key string, value int) {
+		if value >= 0 {
+			values.Add(key, fmt.Sprint(value))
+		}
+	}
+
+	// Set query parameters based on the provided search parameters
 	if params.Id != "" {
-		values.Add("id", params.Id)
+		values.Set("id", params.Id)
 	}
-
 	if params.ExternalID != "" {
-		values.Add("externalId", string(params.ExternalID))
+		values.Set("externalId", string(params.ExternalID))
 	}
-
 	if params.CreatedAfter != nil {
-		values.Add("createdAfter", params.CreatedAfter.Format(time.RFC3339))
+		values.Set("createdAfter", params.CreatedAfter.Format(time.RFC3339))
 	}
-
 	if params.UpdatedAfter != nil {
-		values.Add("updatedAfter", params.UpdatedAfter.Format(time.RFC3339))
+		values.Set("updatedAfter", params.UpdatedAfter.Format(time.RFC3339))
 	}
 
-	if params.MinGuestCount > -1 {
-		values.Add("minGuestCount", fmt.Sprint(params.MinGuestCount))
-	}
-
-	if params.MaxGuestCount > -1 {
-		values.Add("maxGuestCount", fmt.Sprint(params.MaxGuestCount))
-	}
-
-	if params.MinAcceptedCount > -1 {
-		values.Add("minAcceptedCount", fmt.Sprint(params.MinAcceptedCount))
-	}
-
-	if params.MaxAcceptedCount > -1 {
-		values.Add("maxAcceptedCount", fmt.Sprint(params.MaxAcceptedCount))
-	}
-
-	if params.MinDeclinedCount > -1 {
-		values.Add("minDeclinedCount", fmt.Sprint(params.MinDeclinedCount))
-	}
-
-	if params.MaxDeclinedCount > -1 {
-		values.Add("maxDeclinedCount", fmt.Sprint(params.MaxDeclinedCount))
-	}
-
-	if params.MaxAcceptedCount > -1 {
-		values.Add("maxAcceptedCount", fmt.Sprint(params.MaxAcceptedCount))
-	}
-
-	if params.MinNoReplyCount > -1 {
-		values.Add("maxAcceptedCount", fmt.Sprint(params.MinNoReplyCount))
-	}
-
-	if params.MaxNoReplyCount > -1 {
-		values.Add("maxNoReplyCount", fmt.Sprint(params.MaxNoReplyCount))
-	}
-
-	if params.MinCheckinCount > -1 {
-		values.Add("minCheckinCount", fmt.Sprint(params.MinCheckinCount))
-	}
-
-	if params.MaxCheckinCount > -1 {
-		values.Add("maxCheckinCount", fmt.Sprint(params.MaxCheckinCount))
-	}
+	setNonNegativeParam("minGuestCount", params.MinGuestCount)
+	setNonNegativeParam("maxGuestCount", params.MaxGuestCount)
+	setNonNegativeParam("minAcceptedCount", params.MinAcceptedCount)
+	setNonNegativeParam("maxAcceptedCount", params.MaxAcceptedCount)
+	setNonNegativeParam("minDeclinedCount", params.MinDeclinedCount)
+	setNonNegativeParam("maxDeclinedCount", params.MaxDeclinedCount)
+	setNonNegativeParam("minNoReplyCount", params.MinNoReplyCount)
+	setNonNegativeParam("maxNoReplyCount", params.MaxNoReplyCount)
+	setNonNegativeParam("minCheckinCount", params.MinCheckinCount)
+	setNonNegativeParam("maxCheckinCount", params.MaxCheckinCount)
 
 	response, err := api.eventStatisticsRequest(ctx, "event-statistics", values)
 	if err != nil {
@@ -123,7 +100,7 @@ func (api *Client) GetEventStatisticsContext(ctx context.Context, params EventSt
 }
 
 func (api *Client) eventStatisticsRequest(ctx context.Context, path string, values url.Values) (*EventStatistics, error) {
-	response := &EventStatistics{}
+	response := new(EventStatistics)
 	err := api.getMethod(ctx, path, values, response)
 	if err != nil {
 		return nil, err
@@ -132,16 +109,20 @@ func (api *Client) eventStatisticsRequest(ctx context.Context, path string, valu
 	return response, nil
 }
 
-// GetEventStatisticsById will retrieve the statistic for an event with a given ID
-func (api *Client) GetEventStatisticsById(id string) (*EventStatistic, error) {
-	return api.GetEventStatisticsByIdContext(context.Background(), id)
+// GetEventStatisticsByID will retrieve the statistic for an event with a given ID
+func (api *Client) GetEventStatisticsByID(id string) (*EventStatistic, error) {
+	return api.GetEventStatisticsByIDContext(context.Background(), id)
 }
 
-// GetEventStatisticsByIdContext will retrieve the statistic for an event with a given ID with a given context
-func (api *Client) GetEventStatisticsByIdContext(ctx context.Context, id string) (*EventStatistic, error) {
-	values := url.Values{}
-
-	response, err := api.eventStatisticRequest(ctx, "events/"+id, values)
+// GetEventStatisticsByIDContext retrieves the statistics for an event with the given ID using a custom context.
+// It takes a context.Context object and an event ID as input.
+// If successful, it returns a pointer to the EventStatistic and nil error.
+// If an error occurs during the request, it returns nil and the specific error encountered.
+// The function can be called on a Client object.
+func (api *Client) GetEventStatisticsByIDContext(ctx context.Context, eventID string) (*EventStatistic, error) {
+	// Construct the endpoint URL by formatting the eventID into the string.
+	endpoint := fmt.Sprintf("events/%s", eventID)
+	response, err := api.eventStatisticRequest(ctx, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +131,7 @@ func (api *Client) GetEventStatisticsByIdContext(ctx context.Context, id string)
 }
 
 func (api *Client) eventStatisticRequest(ctx context.Context, path string, values url.Values) (*EventStatistic, error) {
-	response := &EventStatistic{}
+	response := new(EventStatistic)
 	err := api.getMethod(ctx, path, values, response)
 	if err != nil {
 		return nil, err
