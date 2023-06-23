@@ -88,12 +88,12 @@ func (api *Client) CreateGuest(g Guest) (*Guest, error) {
 func (api *Client) CreateGuestConext(ctx context.Context, g Guest) (*Guest, error) {
 
 	if g.EventID == "" {
-		panic(fmt.Sprintf("no event id given in Guest %v", g))
+		return nil, fmt.Errorf("no eventId provided in Guest %v", g)
 	}
 
 	request, _ := json.Marshal(g)
 
-	resp := &Guest{}
+	resp := new(Guest)
 	err := postJSON(ctx, api.httpclient, api.endpoint+"guests", request, &resp, api)
 
 	if err != nil {
@@ -108,57 +108,54 @@ func (api *Client) GetGuests(eventId string) (*Guests, error) {
 	return api.GetGuestsContext(context.Background(), eventId, NewGuestSearchParameters())
 }
 
-// GetGuestsContext will retrieve the complete list of guests for a given event with a custom context
+// GetGuestsContext retrieves the complete list of guests for a given event with a custom context.
+// It takes a context.Context object, an event ID, and GuestSearchParameter as input.
+// If successful, it returns a pointer to Guests and nil error.
+// If either the event ID or GuestSearchParameter is not provided, it returns nil and an error.
+// The function can be called on a Client object.
 func (api *Client) GetGuestsContext(ctx context.Context, eventId string, params GuestSearchParameter) (*Guests, error) {
-	values := url.Values{}
-
-	if eventId != "" {
-		values.Add("eventId", eventId)
-	} else if params.Id != "" || params.InvitationId != "" {
-		values.Add("id", params.Id)
-		values.Add("invitationId", params.InvitationId)
-	} else {
+	if eventId == "" && (params.Id == "" && params.InvitationId == "") {
 		return nil, errors.New("neither eventId nor Guest or InvitationId provided")
 	}
 
-	if params.FirstName != "" {
-		values.Add("firstName", params.FirstName)
+	values := url.Values{}
+	if eventId != "" {
+		values.Set("eventId", eventId)
 	}
-	if params.FirstNameContains != "" {
-		values.Add("firstNameContains", params.FirstNameContains)
+	if params.Id != "" {
+		values.Set("id", params.Id)
 	}
-
-	if params.LastName != "" {
-		values.Add("lastName", params.LastName)
-	}
-
-	if params.LastNameContains != "" {
-		values.Add("lastNameContains", params.LastNameContains)
+	if params.InvitationId != "" {
+		values.Set("invitationId", params.InvitationId)
 	}
 
-	if params.Email != "" {
-		values.Add("email", params.Email)
+	// Define a helper function to set non-empty parameters
+	setIfNotEmpty := func(key, value string) {
+		if value != "" {
+			values.Set(key, value)
+		}
 	}
 
-	if params.InvitationState != "" {
-		values.Add("invitationState", string(params.InvitationState))
-	}
+	setIfNotEmpty("firstName", params.FirstName)
+	setIfNotEmpty("firstNameContains", params.FirstNameContains)
+	setIfNotEmpty("lastName", params.LastName)
+	setIfNotEmpty("lastNameContains", params.LastNameContains)
+	setIfNotEmpty("email", params.Email)
+	setIfNotEmpty("invitationState", string(params.InvitationState))
+	setIfNotEmpty("externalId", params.ExternalID)
 
-	if params.ExternalID != "" {
-		values.Add("externalId", params.ExternalID)
-	}
 	if params.CreatedAfter != nil {
-		values.Add("createdAfter", params.CreatedAfter.Format(time.RFC3339))
+		values.Set("createdAfter", params.CreatedAfter.Format(time.RFC3339))
 	}
-
 	if params.UpdatedAfter != nil {
-		values.Add("updatedAfter", params.UpdatedAfter.Format(time.RFC3339))
+		values.Set("updatedAfter", params.UpdatedAfter.Format(time.RFC3339))
 	}
 
 	response, err := api.guestsRequest(ctx, "guests", values)
 	if err != nil {
 		return nil, err
 	}
+
 	return response, nil
 }
 
@@ -167,11 +164,18 @@ func (api *Client) GetGuestById(guestId string) (*Guest, error) {
 	return api.GetGuestByIdContext(context.Background(), guestId)
 }
 
-// GetGuestByIdContext will retrieve the guest with the given guestId with a custom context
-func (api *Client) GetGuestByIdContext(ctx context.Context, guestId string) (*Guest, error) {
-	values := url.Values{}
+// GetGuestByIdContext retrieves the guest with the given guest ID using a custom context.
+// It takes a context.Context object and a guest ID as input.
+// If successful, it returns a pointer to the Guest and nil error.
+// If an error occurs during the request, it returns nil and an error.
+// The function can be called on a Client object.
+func (api *Client) GetGuestByIdContext(ctx context.Context, guestID string) (*Guest, error) {
+	// Construct the endpoint URL by formatting the guest ID into the string.
+	endpoint := fmt.Sprintf("guests/%s", guestID)
 
-	response, err := api.guestRequest(ctx, "guests/"+guestId, values)
+	// Call the guestRequest method on the api object, passing the context,
+	// the constructed endpoint, and the empty URL values as parameters.
+	response, err := api.guestRequest(ctx, endpoint, url.Values{})
 	if err != nil {
 		return nil, err
 	}
@@ -179,31 +183,47 @@ func (api *Client) GetGuestByIdContext(ctx context.Context, guestId string) (*Gu
 	return response, nil
 }
 
-// UpdateGuest will update the given guest with the given guestId
+// UpdateGuest updates the guest with the given guest ID.
+// It takes a Guest object as input.
+// If successful, it returns a pointer to the updated Guest and nil error.
+// If an error occurs during the update, it returns nil and the specific error encountered.
+// The function can be called on a Client object.
 func (api *Client) UpdateGuest(guest Guest) (*Guest, error) {
+	// Delegate the update operation to UpdateGuestContext with a background context
 	return api.UpdateGuestContext(context.Background(), guest)
 }
 
-// UpdateGuestContext will update the guest with the given guestId with a custom context
+// UpdateGuestContext updates the guest with the given guest ID using a custom context.
+// It takes a context.Context object and a Guest object as input.
+// If successful, it returns a pointer to the updated Guest and nil error.
+// If the Guest is missing the EventID or ID, it returns a SweapLibraryError with the appropriate error message.
+// If an error occurs during the update, it returns nil and the specific error encountered.
+// The function can be called on a Client object.
 func (api *Client) UpdateGuestContext(ctx context.Context, g Guest) (*Guest, error) {
-
+	// Check if the EventID is missing in the Guest object
 	if g.EventID == "" {
-		return nil, SweapLibraryError{fmt.Sprintf("no event id given in Guest %v", g)}
+		return nil, SweapLibraryError{Message: fmt.Sprintf("no event ID given in Guest %v", g)}
 	}
+
+	// Check if the ID is missing in the Guest object
 	if g.ID == "" {
-		return nil, SweapLibraryError{"no guest ID given"}
+		return nil, SweapLibraryError{Message: "no guest ID given"}
 	}
 
-	request, _ := json.Marshal(g)
-
-	resp := &Guest{}
-	err := putJSON(ctx, api.httpclient, api.endpoint+"guests/"+g.ID, request, &resp, api)
-
+	// Marshal the Guest object into JSON
+	request, err := json.Marshal(g)
 	if err != nil {
 		return nil, err
 	}
 
-	return resp, nil
+	// Perform the update request and store the response in the updatedGuest variable
+	var updatedGuest Guest
+	err = putJSON(ctx, api.httpclient, api.endpoint+"guests/"+g.ID, request, &updatedGuest, api)
+	if err != nil {
+		return nil, err
+	}
+
+	return &updatedGuest, nil
 }
 
 // DeleteGuest will delete the guest with the given guestId. If guest is not found error will be returned
@@ -223,36 +243,31 @@ func (api *Client) DeleteGuestContext(ctx context.Context, guestId string) error
 }
 
 func (api *Client) guestsRequest(ctx context.Context, path string, values url.Values) (*Guests, error) {
-	response := &Guests{}
+	response := new(Guests)
 
 	err := api.getMethod(ctx, path, values, response)
-	if err != nil {
-		return nil, err
-	}
-
-	return response, nil
+	return response, err
 }
 
 func (api *Client) guestRequest(ctx context.Context, path string, values url.Values) (*Guest, error) {
-	response := &Guest{}
+	response := new(Guest)
 
 	err := api.getMethod(ctx, path, values, response)
-	if err != nil {
-		return nil, err
-	}
-
-	return response, nil
+	return response, err
 }
 
+// NewGuestIterator creates a new iterator function that iterates over a slice of guests.
+// It takes a slice of Guest objects as input.
+// The returned iterator function can be called repeatedly to retrieve the next Guest from the slice.
+// If all guests have been iterated over, the iterator function returns nil.
 func NewGuestIterator(guests []Guest) func() *Guest {
-	n := 0
-	// closure captures variable n
+	index := 0
 	return func() *Guest {
-		if n < len(guests) {
-			g := &guests[n]
-			n++
-			return g
+		if index >= len(guests) {
+			return nil
 		}
-		return nil
+		guest := guests[index]
+		index++
+		return &guest
 	}
 }

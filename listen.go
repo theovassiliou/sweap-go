@@ -30,9 +30,12 @@ const messageBufferSize int = 256
 
 type ListenOptions func(*Client)
 
-// Listen listen to guest changes (new, updates)
+// Listen listens to guest changes (new, updates).
+// It returns a channel of GuestUpdate objects and an error.
+// The channel can be used to receive updates on new or updated guests.
+// If an error occurs during the setup, it returns nil channel and the specific error encountered.
+// The function can be called on a Client object.
 func (api *Client) Listen() (chan *GuestUpdate, error) {
-
 	messageCh := make(chan *GuestUpdate, messageBufferSize)
 
 	search := EventSearchParameter{
@@ -40,37 +43,38 @@ func (api *Client) Listen() (chan *GuestUpdate, error) {
 	}
 
 	events, err := api.SearchEvents(search)
-	guests, err := api.GetGuests((*events)[0].ID)
-
 	if err != nil {
-		fmt.Printf("%s\n", err)
 		return nil, err
 	}
+
+	guests, err := api.GetGuests((*events)[0].ID)
+	if err != nil {
+		return nil, err
+	}
+
 	go func() {
 		storedGuests := make([]Guest, 0)
 
 		for {
-
 			for _, g := range *guests {
-
 				if !contains(g, storedGuests) {
-
-					messageCh <- &GuestUpdate{NEWGUEST, g}
+					messageCh <- &GuestUpdate{EventType: NEWGUEST, Value: g}
 				} else {
-
+					// Handle guest updates here if needed
 				}
 			}
 			storedGuests = *guests
 			fmt.Println("[INFO] Going to sleep")
 			time.Sleep(15 * time.Second)
 			guests, _ = api.GetGuests((*events)[0].ID)
-
 		}
 	}()
 
 	return messageCh, nil
 }
 
+// contains checks if a guest (g1) is present in a slice of guests (g2).
+// It returns true if the guest is found, and false otherwise.
 func contains(g1 Guest, g2 Guests) bool {
 	for _, g := range g2 {
 		if g1.ID == g.ID {
@@ -78,4 +82,16 @@ func contains(g1 Guest, g2 Guests) bool {
 		}
 	}
 	return false
+}
+
+// isUpdatedAtAfter compares two Guest objects and returns true if the UpdatedAt field of the first guest is after the UpdatedAt field of the second guest.
+// It takes two Guest objects as input.
+// If either of the UpdatedAt fields is nil, it returns false.
+// If the UpdatedAt field of the first guest is after the UpdatedAt field of the second guest, it returns true. Otherwise, it returns false.
+
+func isUpdatedAtAfter(guest1, guest2 Guest) bool {
+	if guest1.UpdatedAt == nil || guest2.UpdatedAt == nil {
+		return false
+	}
+	return guest1.UpdatedAt.After(*guest2.UpdatedAt)
 }
