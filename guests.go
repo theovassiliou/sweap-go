@@ -109,9 +109,7 @@ const (
 	UPDATEGUEST = "UPDATE_GUEST"
 )
 
-type CustomFields struct {
-	DefaultMetaAttributeTitle string `json:"default_meta_attribute__title"`
-}
+type CustomFields map[string]string
 
 // CreateGuest creates a Guest in an event and returns a Guest containing it's unigue ID
 func (api *Client) CreateGuest(g Guest) (*Guest, error) {
