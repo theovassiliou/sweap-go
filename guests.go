@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -55,6 +56,40 @@ type Guest struct {
 	AttendanceState AttendanceState `json:"attendanceState"`
 }
 
+type GuestPages struct {
+	Status   string `json:"status"`
+	Content  Guests `json:"content"`
+	Error    Error  `json:"error"`
+	Pageable struct {
+		Size          int `json:"size"`
+		TotalElements int `json:"totalElements"`
+		TotalPages    int `json:"totalPages"`
+		Page          int `json:"page"`
+	} `json:"pageable"`
+
+	/*!SECTION
+	{
+	    "status": "OK",
+	    "content": [
+	        {
+	            "eventId": "8baf13a5-d3c6-419b-848f-b049a9504d2e",
+	            "firstName": "Gabriel",
+				 ...
+	       },
+	        {
+	            "eventId": "8baf13a5-d3c6-419b-848f-b049a9504d2e",
+	            "firstName": "Elena",
+				...
+			}
+	    ],
+	    "pageable": {
+	        "size": 2,
+	        "totalElements": 133,
+	        "totalPages": 67,
+	        "page": 0
+	    }
+	}	*/
+}
 type AttendanceState string
 
 const (
@@ -80,12 +115,12 @@ type CustomFields struct {
 
 // CreateGuest creates a Guest in an event and returns a Guest containing it's unigue ID
 func (api *Client) CreateGuest(g Guest) (*Guest, error) {
-	return api.CreateGuestConext(context.Background(), g)
+	return api.CreateGuestContext(context.Background(), g)
 }
 
-// CreateGuest creates a Guest in an event and returns a Guest containing it's unigue ID with custom context
-// FIXME: Fix spelling of CONTEXT
-func (api *Client) CreateGuestConext(ctx context.Context, g Guest) (*Guest, error) {
+// CreateGuestContext creates the provided Guest (with a given eventID) and returns a Guest containing it's unigue ID with custom context
+// It takes a context.Context object.
+func (api *Client) CreateGuestContext(ctx context.Context, g Guest) (*Guest, error) {
 
 	if g.EventID == "" {
 		return nil, fmt.Errorf("no eventId provided in Guest %v", g)
@@ -104,6 +139,9 @@ func (api *Client) CreateGuestConext(ctx context.Context, g Guest) (*Guest, erro
 }
 
 // GetGuests will retrieve the complete list of guests for a given event
+// You can only get guests for a specific event, so you need to pass the event id via query parameter eventId.
+// The guests are not further filtered.
+// For more fine granular control use #GetGuestsContext
 func (api *Client) GetGuests(eventId string) (*Guests, error) {
 	return api.GetGuestsContext(context.Background(), eventId, NewGuestSearchParameters())
 }
@@ -143,6 +181,7 @@ func (api *Client) GetGuestsContext(ctx context.Context, eventId string, params 
 	setIfNotEmpty("email", params.Email)
 	setIfNotEmpty("invitationState", string(params.InvitationState))
 	setIfNotEmpty("externalId", params.ExternalID)
+	setIfNotEmpty("ticketId", params.TicketID)
 
 	if params.CreatedAfter != nil {
 		values.Set("createdAfter", params.CreatedAfter.Format(time.RFC3339))
@@ -249,6 +288,13 @@ func (api *Client) guestsRequest(ctx context.Context, path string, values url.Va
 	return response, err
 }
 
+func (api *Client) guestsPaginatedRequest(ctx context.Context, path string, values url.Values) (GuestPages, error) {
+	response := new(GuestPages)
+
+	err := api.getMethod(ctx, path, values, response)
+	return *response, err
+}
+
 func (api *Client) guestRequest(ctx context.Context, path string, values url.Values) (*Guest, error) {
 	response := new(Guest)
 
@@ -270,4 +316,67 @@ func NewGuestIterator(guests []Guest) func() *Guest {
 		index++
 		return &guest
 	}
+}
+
+// GetGuestsPaginated will retrieve the complete list of guests for a given event
+// You can only get guests for a specific event, so you need to pass the event id via query parameter eventId.
+// The guests are not further filtered.
+// For more fine granular control use #GetGuestsContext
+func (api *Client) GetGuestsPaginated(eventId string, pp PaginationParameter) (GuestPages, error) {
+	return api.GetGuestsPaginatedContext(context.Background(), eventId, pp, NewGuestSearchParameters())
+}
+
+// GetGuestsPaginatedContext retrieves the paginated list of guests for a given event with a custom context.
+// It takes a context.Context object, page and size for pagination, an event ID, and GuestSearchParameter as input.
+// If successful, it returns a pointer to Guests and nil error.
+// If either the event ID or GuestSearchParameter is not provided, it returns nil and an error.
+// If size
+// The function can be called on a Client object.
+func (api *Client) GetGuestsPaginatedContext(ctx context.Context, eventId string, pages PaginationParameter, params GuestSearchParameter) (GuestPages, error) {
+	if eventId == "" && (params.Id == "" && params.InvitationId == "") {
+		return GuestPages{}, errors.New("neither eventId nor Guest or InvitationId provided")
+	}
+
+	values := url.Values{}
+	if eventId != "" {
+		values.Set("eventId", eventId)
+	}
+	if params.Id != "" {
+		values.Set("id", params.Id)
+	}
+	if params.InvitationId != "" {
+		values.Set("invitationId", params.InvitationId)
+	}
+
+	values.Set("page", strconv.Itoa(pages.Page))
+	values.Set("size", strconv.Itoa(pages.Size))
+
+	// Define a helper function to set non-empty parameters
+	setIfNotEmpty := func(key, value string) {
+		if value != "" {
+			values.Set(key, value)
+		}
+	}
+
+	setIfNotEmpty("firstName", params.FirstName)
+	setIfNotEmpty("firstNameContains", params.FirstNameContains)
+	setIfNotEmpty("lastName", params.LastName)
+	setIfNotEmpty("lastNameContains", params.LastNameContains)
+	setIfNotEmpty("email", params.Email)
+	setIfNotEmpty("invitationState", string(params.InvitationState))
+	setIfNotEmpty("externalId", params.ExternalID)
+
+	if params.CreatedAfter != nil {
+		values.Set("createdAfter", params.CreatedAfter.Format(time.RFC3339))
+	}
+	if params.UpdatedAfter != nil {
+		values.Set("updatedAfter", params.UpdatedAfter.Format(time.RFC3339))
+	}
+
+	response, err := api.guestsPaginatedRequest(ctx, "guests/paginated", values)
+	if err != nil {
+		return GuestPages{}, err
+	}
+
+	return response, nil
 }

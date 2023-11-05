@@ -103,10 +103,23 @@ type GuestSearchParameter struct {
 	CreatedAfter      *time.Time      // optional, filters greater than guest createdAt: ISO 8601 timestamp
 	UpdatedAfter      *time.Time      // optional, filters greater than guest updatedAt: ISO 8601 timestamp
 	InvitationId      string          // optional, filters equal guest invitationId, result will list of 0 or 1 guest, conditionally required if event_id or id are empty
+	TicketID          string          // optinal, filters equal guest ticketId
 }
 
 func NewGuestSearchParameters() GuestSearchParameter {
 	return GuestSearchParameter{}
+}
+
+type PaginationParameter struct {
+	Size int // optional, size of a page, if <=0 default of 100 is assumed
+	Page int // optional, which page should be selected, if <0 default of 0 is assumed
+}
+
+func NewPaginationParamter() PaginationParameter {
+	return PaginationParameter{
+		Size: 100,
+		Page: 0,
+	}
 }
 
 // SearchGuests will retrieve the complete list of Guests matching the search criteria
